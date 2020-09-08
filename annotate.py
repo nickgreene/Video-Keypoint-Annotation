@@ -4,6 +4,8 @@ import glob
 import os
 from pprint import pprint
 import numpy as np
+import json
+import copy
 
 # you can configure these variables. Note: there must be at least as many COLORS as MAX_POINTS
 MAX_POINTS = 10
@@ -23,7 +25,7 @@ COLORS = [(0, 0, 255),
           (0, 51, 102),
         ]
 
-UI_SIZE = (200,300) # height, width
+UI_SIZE = (200,400) # height, width
 
 # Below is program code
 resize_factor = STARTING_RESIZE_FACTOR
@@ -38,7 +40,11 @@ isRMouseDown = False
 image = None
 read_mode = True
 brightness = 0
+is_current_image_saved = False
 
+
+output_file_name = "output.json"
+backup_file_name = "backup.json"
 
 def render_image():
     global image, refPt, isRMouseDown
@@ -87,13 +93,18 @@ def render_roi():
     
     
 def render_UI(current_image, total_images):
-    global current_point, is_point_selected
-    
+    global is_current_image_saved, image_index, glob_results  
     ui = np.zeros((UI_SIZE[0], UI_SIZE[1], 3), np.uint8)
     ui.fill(255)
     
     cv2.putText(ui, f"image {image_index}/{len(glob_results)}", ( (UI_SIZE[1]-250)//2, UI_SIZE[0]//4), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,0), 1)
     
+    if is_current_image_saved:
+        saved_text = "saved"
+    else:
+        saved_text = "not saved"
+        
+    cv2.putText(ui, saved_text, ( (UI_SIZE[1]-250)//2, UI_SIZE[0]//2), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,0), 1)
     
     current_point_for_UI = current_point + 1 - int(not is_point_selected) 
     if current_point >= MAX_POINTS:
@@ -119,7 +130,7 @@ def handle_mouse_event_roi(event, x, y, flags, param):
 
 
 def click_and_crop(event, x, y, flags, param, window):
-    global refPt, cropPt, roiPt, isMouseDown, isRMouseDown, image, current_point, is_point_selected
+    global refPt, cropPt, roiPt, isMouseDown, isRMouseDown, image, current_point, is_point_selected, is_current_image_saved
     
     if event == cv2.EVENT_LBUTTONDOWN:
         if current_point > MAX_POINTS - 1:
@@ -133,6 +144,8 @@ def click_and_crop(event, x, y, flags, param, window):
         if window == "ROI":
             x2, y2 = roiPt[0]
             refPt[current_point] = (round(x / resize_factor) + x2, round(y / resize_factor) + y2)
+        
+        is_current_image_saved = False
             
     elif event == cv2.EVENT_LBUTTONUP:
         isMouseDown = False
@@ -195,53 +208,51 @@ def click_and_crop(event, x, y, flags, param, window):
             roiPt = [(x1, y1), (x2, y2)]
 
 
-def add_output_line(filename, file_contents, image_index):
-    global refPt
-    output_line = f"{filename},{image_index}"
-                
+def add_output_line(filename, file_contents, image_index, backup_file_object):
+    global refPt, is_current_image_saved
+    output_line = { "filename":filename }                
+    
     for i in range(len(refPt)):
         if refPt[i] is not None:
-            output_line = f"{output_line},{refPt[i][0]},{refPt[i][1]}"
+            output_line[f"{i}"] = (refPt[i][0], refPt[i][1])
         else:
-            output_line = f"{output_line},{None},{None}"
+            output_line[f"{i}"] = None
 
-    output_line = f"{output_line}\n"
-    # output_file.write(output_line)
     
-    if image_index < len(file_contents):  # note image index starts from 1 for first image
-        file_contents[image_index] = output_line           
-    else:
-        file_contents.append(output_line)
-            
+    file_contents["data"][f"{image_index}"] = output_line
+    
+    backup_file_object.seek(0)
+    json.dump(file_contents, backup_file_object, indent=2)
+    backup_file_object.truncate()
+    is_current_image_saved = True        
 
 def write_output_file(output_filepath, contents):
     output_file = open(output_filepath, "w", 1)      
-    output_file.writelines(contents)
+    json.dump(contents, output_file, indent=2, sort_keys=True)
     output_file.close()
     
     
 def read_points(filename, file_contents, image_index):
-    global refPt
-       
-    line_contents = file_contents[image_index][:-1].split(',')
+    global refPt, is_current_image_saved
+    
+    line_contents = file_contents["data"][f"{image_index}"]
 
-    assert(filename == line_contents[0])
-    assert(image_index == int(line_contents[1]))
-           
+    assert(filename == line_contents["filename"])
+        
+    is_current_image_saved = True
+    
     for i in range(0, len(refPt)):
-        print(len(line_contents) - 1, i, 2*i + 2  )
-        if (2*i + 2 < (len(line_contents) - 1)):
-            if (line_contents[2*i + 2] == "None"):
-                refPt[i] = None
-            else:
-                refPt[i] = (int(line_contents[2*i + 2]), int(line_contents[2*i + 3]))
+        refPt[i] = None
+
+        if (f"{i}" in line_contents) and (line_contents[f"{i}"] is not None):
+            refPt[i] = tuple(line_contents[f"{i}"])
+
                 
         
 if __name__ == "__main__":    
     ap = argparse.ArgumentParser()
     ap.add_argument("-i", "--image_folder", required=True, help="Path to the image folder")
     ap.add_argument("-e", "--image_extension", required=True, help=".ppm, .pgm, .png")
-    ap.add_argument("-r", "--read_points", required=False, action="store_true", help="Path to csv file corresponding to the image folder")   
     ap.add_argument("-f", "--starting_frame", required=False)
     
     args = vars(ap.parse_args())
@@ -253,40 +264,42 @@ if __name__ == "__main__":
     
     glob_results.sort()   
 
-    output_filepath = os.path.join(args["image_folder"], "output.csv")    
-    
-    csv_header = "filename, image_index"
-    for i in range(MAX_POINTS):
-        csv_header = f"{csv_header}, x{i}, y{i}"
-    csv_header = f"{csv_header}\n"
-    
-    file_contents = [csv_header]
+    output_filepath = os.path.join(args["image_folder"], output_file_name)
+    backup_filepath = os.path.join(args["image_folder"], backup_file_name)    
+   
+    filename_index = 0
+ 
     if os.path.exists(output_filepath):
         f = open(output_filepath, "r")
-        file_contents = f.readlines()
+        file_contents = json.load(f)
         f.close()
         
-    original_file_contents = file_contents.copy()
+        filename_index = min(max(file_contents["current_index"] - 1, 0), len(glob_results) - 1)
+    else:
+        file_contents = { "data":{} }
+        
+    original_file_contents = copy.deepcopy(file_contents)
+    
+    backup_file_object = open(backup_filepath, "w")
         
     refPt = []
     for i in range(MAX_POINTS):
         refPt.append(None)
         
-    filename_index = 0
-    
     if args["starting_frame"] is not None:
-        filename_index = int(args["starting_frame"]) - 1
+        filename_index = min(max(int(args["starting_frame"]) - 1, 0), len(glob_results) - 1)
         
     while True:
         image_index = filename_index + 1
         
         filename = glob_results[filename_index]
 
-        print(f"current image: {image_index} / {len(glob_results)}")
-
-        if image_index < (len(file_contents)):  # note image index starts from 1 for first image, also header
+        if f"{image_index}" in file_contents['data']:  # note image index starts from 1 for first image, also header
             if read_mode:
                 read_points(filename, file_contents, image_index)
+                
+        else:
+            is_current_image_saved = False
 
         read_mode = True
         image = cv2.imread(filename)
@@ -308,18 +321,22 @@ if __name__ == "__main__":
             if not isMouseDown:
                 if key == ord(" ") or key == ord("]"):
                     next_image = True
-                    add_output_line(filename, file_contents, image_index)
+                    add_output_line(filename, file_contents, image_index, backup_file_object)
         
                     filename_index += 1
+                    if filename_index > len(glob_results) - 1:
+                        filename_index = len(glob_results) - 1
+                        
                     current_point = 0
                     is_point_selected = True
                     
                     if key == ord("]"):
                         read_mode = False
+                        is_current_image_saved = False
                     
                 elif key == ord("b") or key == ord("["):
                     next_image = True
-                    add_output_line(filename, file_contents, image_index)
+                    add_output_line(filename, file_contents, image_index, backup_file_object)
                     
                     filename_index -= 1
                     if filename_index < 0:
@@ -330,23 +347,50 @@ if __name__ == "__main__":
                     
                     if key == ord("["):
                         read_mode = False
+                        is_current_image_saved = False
+                
+                elif key == ord("f"):
+                    next_image = True
+
+                    filename_index -= 1
+                    if filename_index < 0:
+                        filename_index = 0
+                        
+                    current_point = 0
+                    is_point_selected = True
+                
+                elif key == ord("g"):
+                    next_image = True
+        
+                    filename_index += 1
+                    if filename_index > len(glob_results) - 1:
+                        filename_index = len(glob_results) - 1
+                        
+                    current_point = 0
+                    is_point_selected = True
+                    
                     
                 elif key == ord("v"):
                     print(f"Saved Current Points for image {image_index} / {len(glob_results)}")
-                    add_output_line(filename, file_contents, image_index)
+                    add_output_line(filename, file_contents, image_index, backup_file_object)
 
                 elif key == ord("c"):
                     print(f"loading originally saved points for image {image_index} / {len(glob_results)}")
                     if image_index < (len(file_contents)):  # note image index starts from 1 for first image, also header
                         read_points(filename, original_file_contents, image_index)
+                        is_current_image_saved = False
+
 
                 elif key == 27:  # ESC key
+                    file_contents["current_index"] = image_index
                     write_output_file(output_filepath, file_contents)
-                    # output_file.close()
+                    backup_file_object.close()
                     cv2.destroyAllWindows()
                     exit()
                     
                 elif key == ord("r"):
+                    is_current_image_saved = False
+
                     if is_point_selected:
                         refPt[current_point] = None
                         
@@ -366,6 +410,7 @@ if __name__ == "__main__":
                 
                     current_point = 0
                     is_point_selected = True
+                    is_current_image_saved = False
                 
                 elif key == ord("="):
                     resize_factor += 0.2
@@ -445,10 +490,12 @@ if __name__ == "__main__":
                         index = current_point - 1
                         if index < 0:
                             index = 0
-                            
+                                              
                     if refPt[index] is not None:
                         x, y = refPt[index]
                         refPt[index] = (x, y - 1)
+                        
+                    is_current_image_saved = False
                         
                 elif key == ord("a") or key == ord("j"):
                     index = current_point
@@ -461,6 +508,8 @@ if __name__ == "__main__":
                         x, y = refPt[index]
                         refPt[index] = (x - 1, y)
     
+                    is_current_image_saved = False
+
                 elif key == ord("s") or key == ord("k"):
                     index = current_point
                     if not is_point_selected:
@@ -471,6 +520,8 @@ if __name__ == "__main__":
                     if refPt[index] is not None:                    
                         x, y = refPt[index]
                         refPt[index] = (x, y + 1)
+
+                    is_current_image_saved = False
                         
                 elif key == ord("d") or key == ord("l"):
                     index = current_point
@@ -482,7 +533,9 @@ if __name__ == "__main__":
                     if refPt[index] is not None:
                         x, y = refPt[index]
                         refPt[index] = (x + 1, y)
-                        
+
+                    is_current_image_saved = False
+    
                 elif key == ord("z") or key == ord(","):
                     if is_point_selected:
                         current_point -= 1
@@ -493,7 +546,7 @@ if __name__ == "__main__":
                         current_point = 0
                                         
                     is_point_selected = True
-                    
+                                        
                 elif key == ord("x") or key == ord("."):
                     if is_point_selected:
                         current_point += 1
