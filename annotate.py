@@ -15,12 +15,15 @@ COLORS = [(0, 0, 255),
           (52, 201, 235),
           (0, 255, 0),
           (255, 227, 87),
+          (255, 0, 0),
           (255, 0, 127),
           (205, 102, 155),
           (235, 152, 225),
           (204, 153, 255),
           (0, 51, 102),
         ]
+
+UI_SIZE = (200,300) # height, width
 
 # Below is program code
 resize_factor = STARTING_RESIZE_FACTOR
@@ -29,7 +32,7 @@ roiPt = STARTING_ROI
 refPt = []
 resized_resolution = []
 current_point = 0
-is_point_selected = False
+is_point_selected = True
 isMouseDown = False
 isRMouseDown = False
 image = None
@@ -81,6 +84,30 @@ def render_roi():
             cv2.circle(roi, (round((x1 - x2) * resize_factor), round((y1 - y2) * resize_factor)), 3, COLORS[i], -1)
             
     cv2.imshow("ROI", roi)
+    
+    
+def render_UI(current_image, total_images):
+    global current_point, is_point_selected
+    
+    ui = np.zeros((UI_SIZE[0], UI_SIZE[1], 3), np.uint8)
+    ui.fill(255)
+    
+    cv2.putText(ui, f"image {image_index}/{len(glob_results)}", ( (UI_SIZE[1]-250)//2, UI_SIZE[0]//4), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,0), 1)
+    
+    
+    current_point_for_UI = current_point + 1 - int(not is_point_selected) 
+    if current_point >= MAX_POINTS:
+        current_point_for_UI = MAX_POINTS
+    
+    if is_point_selected:
+        current_point_text = f"current point: {current_point_for_UI}"
+    else:
+        current_point_text = f"current point: {current_point_for_UI}+"
+        
+    cv2.putText(ui, current_point_text, ( (UI_SIZE[1]-280)//2, UI_SIZE[0]*3//4), cv2.FONT_HERSHEY_SIMPLEX, 1, COLORS[current_point_for_UI-1], 2, cv2.LINE_AA)
+
+    cv2.imshow("ui", ui)
+    
 
     
 def handle_mouse_event_image(event, x, y, flags, param):
@@ -119,7 +146,10 @@ def click_and_crop(event, x, y, flags, param, window):
             refPt[current_point] = (round(x / resize_factor) + x2, round(y / resize_factor) + y2)
             
         current_point += 1
-    
+        if current_point > MAX_POINTS - 1:
+            current_point = MAX_POINTS - 1
+            is_point_selected = True
+            
     elif event == cv2.EVENT_MOUSEMOVE:
         if isMouseDown:           
             if window == "image":
@@ -210,13 +240,17 @@ def read_points(filename, file_contents, image_index):
 if __name__ == "__main__":    
     ap = argparse.ArgumentParser()
     ap.add_argument("-i", "--image_folder", required=True, help="Path to the image folder")
-    ap.add_argument("-e", "--image_extension", required=True, help=".ppm or .pgm")
+    ap.add_argument("-e", "--image_extension", required=True, help=".ppm, .pgm, .png")
     ap.add_argument("-r", "--read_points", required=False, action="store_true", help="Path to csv file corresponding to the image folder")   
     ap.add_argument("-f", "--starting_frame", required=False)
     
     args = vars(ap.parse_args())
     
     glob_results = glob.glob(os.path.join( args["image_folder"], f'*{args["image_extension"]}'))
+    
+    if len(glob_results) == 0:
+        raise FileNotFoundError(f'No {args["image_extension"]} files found in {args["image_folder"]}')
+    
     glob_results.sort()   
 
     output_filepath = os.path.join(args["image_folder"], "output.csv")    
@@ -267,204 +301,213 @@ if __name__ == "__main__":
             # display the image and wait for a keypress
             render_image()
             render_roi()
+            render_UI(image_index, len(glob_results))
                 
             key = cv2.waitKey(1) & 0xFF
+
+            if not isMouseDown:
+                if key == ord(" ") or key == ord("]"):
+                    next_image = True
+                    add_output_line(filename, file_contents, image_index)
         
-            if key == ord(" ") or key == ord("]"):
-                next_image = True
-                add_output_line(filename, file_contents, image_index)
+                    filename_index += 1
+                    current_point = 0
+                    is_point_selected = True
+                    
+                    if key == ord("]"):
+                        read_mode = False
+                    
+                elif key == ord("b") or key == ord("["):
+                    next_image = True
+                    add_output_line(filename, file_contents, image_index)
+                    
+                    filename_index -= 1
+                    if filename_index < 0:
+                        filename_index = 0
+                        
+                    current_point = 0
+                    is_point_selected = True
+                    
+                    if key == ord("["):
+                        read_mode = False
+                    
+                elif key == ord("v"):
+                    print(f"Saved Current Points for image {image_index} / {len(glob_results)}")
+                    add_output_line(filename, file_contents, image_index)
+
+                elif key == ord("c"):
+                    print(f"loading originally saved points for image {image_index} / {len(glob_results)}")
+                    if image_index < (len(file_contents)):  # note image index starts from 1 for first image, also header
+                        read_points(filename, original_file_contents, image_index)
+
+                elif key == 27:  # ESC key
+                    write_output_file(output_filepath, file_contents)
+                    # output_file.close()
+                    cv2.destroyAllWindows()
+                    exit()
+                    
+                elif key == ord("r"):
+                    if is_point_selected:
+                        refPt[current_point] = None
+                        
+                        if current_point > 0:
+                            is_point_selected = False
+                                        
+                    else:
+                        refPt[current_point - 1] = None
+                        current_point -= 1
+                        if current_point < 1:
+                            current_point = 0
+                            is_point_selected = True
+                            
+                elif key == ord("t"):
+                    for i in range(0, len(refPt)):
+                        refPt[i] = None
+                
+                    current_point = 0
+                    is_point_selected = True
+                
+                elif key == ord("="):
+                    resize_factor += 0.2
+                    
+                elif key == ord("-"):
+                    resize_factor -= 0.2
+                    
+                    if resize_factor < 0.6:
+                        resize_factor = 0.4
+
+                elif key == ord("1"):
+                    current_point = 0
+                    if current_point > MAX_POINTS - 1:
+                        current_point = MAX_POINTS - 1
     
-                filename_index += 1
-                current_point = 0
-                is_point_selected = True
-                
-                if key == ord("]"):
-                    read_mode = False
-                
-            elif key == ord("b") or key == ord("["):
-                next_image = True
-                add_output_line(filename, file_contents, image_index)
-                  
-                filename_index -= 1
-                if filename_index < 0:
-                    filename_index = 0
+                    is_point_selected = True
                     
-                current_point = 0
-                is_point_selected = True
-                
-                if key == ord("["):
-                    read_mode = False
-                
-            elif key == ord("v"):
-                print(f"Saved Current Points for image {image_index} / {len(glob_results)}")
-                add_output_line(filename, file_contents, image_index)
+                elif key == ord("2"):
+                    current_point = 1
+                    if current_point > MAX_POINTS - 1:
+                        current_point = MAX_POINTS - 1
 
-            elif key == ord("c"):
-                print(f"loading originally saved points for image {image_index} / {len(glob_results)}")
-                if image_index < (len(file_contents)):  # note image index starts from 1 for first image, also header
-                    read_points(filename, original_file_contents, image_index)
+                    is_point_selected = True
+    
+                elif key == ord("3"):
+                    current_point = 2
+                    if current_point > MAX_POINTS - 1:
+                        current_point = MAX_POINTS - 1
 
-            elif key == 27:  # ESC key
-                write_output_file(output_filepath, file_contents)
-                # output_file.close()
-                cv2.destroyAllWindows()
-                exit()
-                
-            elif key == ord("r"):
-                if is_point_selected:
-                    refPt[current_point] = None
+                    is_point_selected = True
+    
+                elif key == ord("4"):
+                    current_point = 3
+                    if current_point > MAX_POINTS - 1:
+                        current_point = MAX_POINTS - 1
+
+                    is_point_selected = True
+    
+                elif key == ord("5"):
+                    current_point = 4
+                    if current_point > MAX_POINTS - 1:
+                        current_point = MAX_POINTS - 1
+
+                    is_point_selected = True
+    
+                elif key == ord("6"):
+                    current_point = 5
+                    if current_point > MAX_POINTS - 1:
+                        current_point = MAX_POINTS - 1
+
+                    is_point_selected = True
+    
+                elif key == ord("7"):
+                    current_point = 6
+                    if current_point > MAX_POINTS - 1:
+                        current_point = MAX_POINTS - 1
+
+                    is_point_selected = True
+    
+                elif key == ord("8"):
+                    current_point = 7
+                    if current_point > MAX_POINTS - 1:
+                        current_point = MAX_POINTS - 1
+
+                    is_point_selected = True
+    
+                elif key == ord("9"):
+                    current_point = 8
+                    if current_point > MAX_POINTS - 1:
+                        current_point = MAX_POINTS - 1
+
+                    is_point_selected = True
                     
-                    is_point_selected = False
-                                    
-                else:
-                    refPt[current_point - 1] = None
-                    current_point -= 1
+                elif key == ord("w") or key == ord("i"):
+                    index = current_point
+                    if not is_point_selected:
+                        index = current_point - 1
+                        if index < 0:
+                            index = 0
+                            
+                    if refPt[index] is not None:
+                        x, y = refPt[index]
+                        refPt[index] = (x, y - 1)
+                        
+                elif key == ord("a") or key == ord("j"):
+                    index = current_point
+                    if not is_point_selected:
+                        index = current_point - 1
+                        if index < 0:
+                            index = 0
+
+                    if refPt[index] is not None:
+                        x, y = refPt[index]
+                        refPt[index] = (x - 1, y)
+    
+                elif key == ord("s") or key == ord("k"):
+                    index = current_point
+                    if not is_point_selected:
+                        index = current_point - 1
+                        if index < 0:
+                            index = 0
+
+                    if refPt[index] is not None:                    
+                        x, y = refPt[index]
+                        refPt[index] = (x, y + 1)
+                        
+                elif key == ord("d") or key == ord("l"):
+                    index = current_point
+                    if not is_point_selected:
+                        index = current_point - 1
+                        if index < 0:
+                            index = 0
+                        
+                    if refPt[index] is not None:
+                        x, y = refPt[index]
+                        refPt[index] = (x + 1, y)
+                        
+                elif key == ord("z") or key == ord(","):
+                    if is_point_selected:
+                        current_point -= 1
+                    else:
+                        current_point -= 2
+                    
                     if current_point < 0:
                         current_point = 0
+                                        
+                    is_point_selected = True
+                    
+                elif key == ord("x") or key == ord("."):
+                    if is_point_selected:
+                        current_point += 1
+                    
+                    if current_point > MAX_POINTS - 1:
+                        current_point = MAX_POINTS - 1
                         
-            elif key == ord("t"):
-                for i in range(0, len(refPt)):
-                    refPt[i] = None
-            
-                current_point = 0
-                is_point_selected = True
-            
-            elif key == ord("="):
-                resize_factor += 0.2
-                
-            elif key == ord("-"):
-                resize_factor -= 0.2
-
-            elif key == ord("1"):
-                current_point = 0
-                if current_point > MAX_POINTS - 1:
-                    current_point = MAX_POINTS - 1
- 
-                is_point_selected = True
-                
-            elif key == ord("2"):
-                current_point = 1
-                if current_point > MAX_POINTS - 1:
-                    current_point = MAX_POINTS - 1
-
-                is_point_selected = True
- 
-            elif key == ord("3"):
-                current_point = 2
-                if current_point > MAX_POINTS - 1:
-                    current_point = MAX_POINTS - 1
-
-                is_point_selected = True
- 
-            elif key == ord("4"):
-                current_point = 3
-                if current_point > MAX_POINTS - 1:
-                    current_point = MAX_POINTS - 1
-
-                is_point_selected = True
- 
-            elif key == ord("5"):
-                current_point = 4
-                if current_point > MAX_POINTS - 1:
-                    current_point = MAX_POINTS - 1
-
-                is_point_selected = True
- 
-            elif key == ord("6"):
-                current_point = 5
-                if current_point > MAX_POINTS - 1:
-                    current_point = MAX_POINTS - 1
-
-                is_point_selected = True
- 
-            elif key == ord("7"):
-                current_point = 6
-                if current_point > MAX_POINTS - 1:
-                    current_point = MAX_POINTS - 1
-
-                is_point_selected = True
- 
-            elif key == ord("8"):
-                current_point = 7
-                if current_point > MAX_POINTS - 1:
-                    current_point = MAX_POINTS - 1
-
-                is_point_selected = True
- 
-            elif key == ord("9"):
-                current_point = 8
-                if current_point > MAX_POINTS - 1:
-                    current_point = MAX_POINTS - 1
-
-                is_point_selected = True
-                
-            elif key == ord("w") or key == ord("i"):
-                index = current_point
-                if not is_point_selected:
-                    index = current_point - 1
-                    if index < 0:
-                        index = 0
-                        
-                if refPt[index] is not None:
-                    x, y = refPt[index]
-                    refPt[index] = (x, y - 1)
+                    is_point_selected = True
                     
-            elif key == ord("a") or key == ord("j"):
-                index = current_point
-                if not is_point_selected:
-                    index = current_point - 1
-                    if index < 0:
-                        index = 0
-
-                if refPt[index] is not None:
-                    x, y = refPt[index]
-                    refPt[index] = (x - 1, y)
- 
-            elif key == ord("s") or key == ord("k"):
-                index = current_point
-                if not is_point_selected:
-                    index = current_point - 1
-                    if index < 0:
-                        index = 0
-
-                if refPt[index] is not None:                    
-                    x, y = refPt[index]
-                    refPt[index] = (x, y + 1)
+                elif key == ord("y"):
+                    brightness += 5
                     
-            elif key == ord("d") or key == ord("l"):
-                index = current_point
-                if not is_point_selected:
-                    index = current_point - 1
-                    if index < 0:
-                        index = 0
-                    
-                if refPt[index] is not None:
-                    x, y = refPt[index]
-                    refPt[index] = (x + 1, y)
-                    
-            elif key == ord("z") or key == ord(","):
-                if is_point_selected:
-                    current_point -= 1
+                elif key == ord("h"):
+                    brightness -= 5                
                 
-                if current_point < 0:
-                    current_point = 0
-                                    
-                is_point_selected = True
-                
-            elif key == ord("x") or key == ord("."):
-                if is_point_selected:
-                    current_point += 1
-                
-                if current_point > MAX_POINTS - 1:
-                    current_point = MAX_POINTS - 1
-                    
-                is_point_selected = True
-                
-            elif key == ord("y"):
-                brightness += 5
-                
-            elif key == ord("h"):
-                brightness -= 5                
-            
-            elif key == ord("n"):
-                brightness = 0
+                elif key == ord("n"):
+                    brightness = 0
