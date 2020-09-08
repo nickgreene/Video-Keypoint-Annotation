@@ -27,7 +27,7 @@ additional non-required option is ```--starting_frame ``` which forces the progr
 - ```=``` | ```-```: enlarge/shrink the ROI window
 - ```y``` | ```h```: increase/decrease image brightness
 - ```n```: reset image brightness
-- ```v```: force save the keypoints in the current image
+- ```v```: force save the keypoints in the current image and write the output file
 - ```c```: reload originally saved keypoints undoing any modifications if they existed in the save file upon startup
 - ```ESC```: quit and save changes (will not save current frame if it says "unsaved")
-
+- ```q```: press and hold to quit without saving (quits after 10 uninterrupted 'q' presses)

@@ -2,13 +2,12 @@ import argparse
 import cv2
 import glob
 import os
-from pprint import pprint
 import numpy as np
 import json
 import copy
 
 # you can configure these variables. Note: there must be at least as many COLORS as MAX_POINTS
-MAX_POINTS = 10
+MAX_POINTS = 8
 POINT_SIZE = 3
 STARTING_RESIZE_FACTOR = 5
 STARTING_ROI = [(100, 100),(400,400)]
@@ -41,6 +40,9 @@ image = None
 read_mode = True
 brightness = 0
 is_current_image_saved = False
+num_quit_attempts = 0
+ui_message_length = 20
+ui_frames = 0
 
 
 output_file_name = "output.json"
@@ -93,18 +95,18 @@ def render_roi():
     
     
 def render_UI(current_image, total_images):
-    global is_current_image_saved, image_index, glob_results  
+    global is_current_image_saved, image_index, glob_results, ui_frames  
     ui = np.zeros((UI_SIZE[0], UI_SIZE[1], 3), np.uint8)
     ui.fill(255)
     
-    cv2.putText(ui, f"image {image_index}/{len(glob_results)}", ( (UI_SIZE[1]-250)//2, UI_SIZE[0]//4), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,0), 1)
+    cv2.putText(ui, f"image {image_index}/{len(glob_results)}", ( (UI_SIZE[1]-250)//2, UI_SIZE[0]//5), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,0), 1)
     
     if is_current_image_saved:
-        saved_text = "saved"
+        saved_text = "frame saved"
     else:
-        saved_text = "not saved"
+        saved_text = "frame not saved"
         
-    cv2.putText(ui, saved_text, ( (UI_SIZE[1]-250)//2, UI_SIZE[0]//2), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,0), 1)
+    cv2.putText(ui, saved_text, ( (UI_SIZE[1]-250)//2, UI_SIZE[0]*2//5), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,0), 1)
     
     current_point_for_UI = current_point + 1 - int(not is_point_selected) 
     if current_point >= MAX_POINTS:
@@ -115,10 +117,16 @@ def render_UI(current_image, total_images):
     else:
         current_point_text = f"current point: {current_point_for_UI}+"
         
-    cv2.putText(ui, current_point_text, ( (UI_SIZE[1]-280)//2, UI_SIZE[0]*3//4), cv2.FONT_HERSHEY_SIMPLEX, 1, COLORS[current_point_for_UI-1], 2, cv2.LINE_AA)
+    cv2.putText(ui, current_point_text, ( (UI_SIZE[1]-280)//2, UI_SIZE[0]*3//5), cv2.FONT_HERSHEY_SIMPLEX, 1, COLORS[current_point_for_UI-1], 2, cv2.LINE_AA)
 
+    if ui_frames > 0:
+        color = 0
+        if ui_frames < ui_message_length // 3:        
+            color = (255*((ui_message_length//3)-ui_frames))//(ui_message_length//3)
+        cv2.putText(ui, "saved to output file", ( (UI_SIZE[1]-300)//2, UI_SIZE[0]*4//5), cv2.FONT_HERSHEY_SIMPLEX, 1, (color, color, color), 1, cv2.LINE_AA)
+        ui_frames -= 1
+            
     cv2.imshow("ui", ui)
-    
 
     
 def handle_mouse_event_image(event, x, y, flags, param):
@@ -275,6 +283,10 @@ if __name__ == "__main__":
         f.close()
         
         filename_index = min(max(file_contents["current_index"] - 1, 0), len(glob_results) - 1)
+        roiPt = file_contents["roi"]
+        resize_factor = file_contents["scale"]
+        brightness = file_contents["brightness"]
+
     else:
         file_contents = { "data":{} }
         
@@ -319,6 +331,17 @@ if __name__ == "__main__":
             key = cv2.waitKey(1) & 0xFF
 
             if not isMouseDown:
+                if key == ord("q"):
+                    num_quit_attempts += 1 # press q 10 times to quit without saving
+                    print(f"quitting after {10 - num_quit_attempts} more q presses")
+                    if num_quit_attempts > 9:
+                        backup_file_object.close()
+                        cv2.destroyAllWindows()
+                        exit()
+                        
+                elif key != 255:
+                    num_quit_attempts = 0
+                        
                 if key == ord(" ") or key == ord("]"):
                     next_image = True
                     add_output_line(filename, file_contents, image_index, backup_file_object)
@@ -358,6 +381,10 @@ if __name__ == "__main__":
                         
                     current_point = 0
                     is_point_selected = True
+                    
+                    for i in range(0, len(refPt)):
+                        refPt[i] = None
+                    
                 
                 elif key == ord("g"):
                     next_image = True
@@ -369,10 +396,20 @@ if __name__ == "__main__":
                     current_point = 0
                     is_point_selected = True
                     
+                    for i in range(0, len(refPt)):
+                        refPt[i] = None
                     
                 elif key == ord("v"):
-                    print(f"Saved Current Points for image {image_index} / {len(glob_results)}")
                     add_output_line(filename, file_contents, image_index, backup_file_object)
+                    
+                    file_contents["current_index"] = image_index
+                    file_contents["roi"] = roiPt
+                    file_contents["scale"] = resize_factor
+                    file_contents["brightness"] = brightness
+
+                    write_output_file(output_filepath, file_contents)
+                    ui_frames = ui_message_length
+                    print("Saved and wrote to output file")
 
                 elif key == ord("c"):
                     if f"{image_index}" in file_contents["data"]:  # note image index starts from 1 for first image, also header
@@ -381,6 +418,10 @@ if __name__ == "__main__":
 
                 elif key == 27:  # ESC key
                     file_contents["current_index"] = image_index
+                    file_contents["roi"] = roiPt
+                    file_contents["scale"] = resize_factor
+                    file_contents["brightness"] = brightness
+
                     write_output_file(output_filepath, file_contents)
                     backup_file_object.close()
                     cv2.destroyAllWindows()
@@ -488,7 +529,7 @@ if __name__ == "__main__":
                         index = current_point - 1
                         if index < 0:
                             index = 0
-                                              
+                                            
                     if refPt[index] is not None:
                         x, y = refPt[index]
                         refPt[index] = (x, y - 1)
