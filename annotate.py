@@ -375,11 +375,9 @@ if __name__ == "__main__":
                     add_output_line(filename, file_contents, image_index, backup_file_object)
 
                 elif key == ord("c"):
-                    print(f"loading originally saved points for image {image_index} / {len(glob_results)}")
-                    if image_index < (len(file_contents)):  # note image index starts from 1 for first image, also header
+                    if f"{image_index}" in file_contents["data"]:  # note image index starts from 1 for first image, also header
                         read_points(filename, original_file_contents, image_index)
                         is_current_image_saved = False
-
 
                 elif key == 27:  # ESC key
                     file_contents["current_index"] = image_index
