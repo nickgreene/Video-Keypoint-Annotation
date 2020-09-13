@@ -218,7 +218,7 @@ def click_and_crop(event, x, y, flags, param, window):
 
 def add_output_line(filename, file_contents, image_index, backup_file_object):
     global refPt, is_current_image_saved
-    output_line = { "filename":filename }                
+    output_line = {"index": image_index}                
     
     for i in range(len(refPt)):
         if refPt[i] is not None:
@@ -227,7 +227,7 @@ def add_output_line(filename, file_contents, image_index, backup_file_object):
             output_line[f"{i}"] = None
 
     
-    file_contents["data"][f"{image_index}"] = output_line
+    file_contents["data"][os.path.basename(filename)] = output_line
     
     backup_file_object.seek(0)
     json.dump(file_contents, backup_file_object, indent=2)
@@ -239,21 +239,20 @@ def write_output_file(output_filepath, contents):
     json.dump(contents, output_file, indent=2, sort_keys=True)
     output_file.close()
     
-    
 def read_points(filename, file_contents, image_index):
-    global refPt, is_current_image_saved
-    
-    line_contents = file_contents["data"][f"{image_index}"]
+    # not using image_index right now
 
-    assert(filename == line_contents["filename"])
+    filename_without_path = os.path.basename(filename)
+    
+    if filename_without_path in file_contents['data']:        
+        global refPt, is_current_image_saved
+        line_contents = file_contents["data"][filename_without_path]
+        is_current_image_saved = True
         
-    is_current_image_saved = True
-    
-    for i in range(0, len(refPt)):
-        refPt[i] = None
-
-        if (f"{i}" in line_contents) and (line_contents[f"{i}"] is not None):
-            refPt[i] = tuple(line_contents[f"{i}"])
+        for i in range(0, len(refPt)):
+            refPt[i] = None
+            if (f"{i}" in line_contents) and (line_contents[f"{i}"] is not None):
+                refPt[i] = tuple(line_contents[f"{i}"])
 
                 
         
@@ -300,16 +299,16 @@ if __name__ == "__main__":
         
     if args["starting_frame"] is not None:
         filename_index = min(max(int(args["starting_frame"]) - 1, 0), len(glob_results) - 1)
-        
+           
     while True:
         image_index = filename_index + 1
-        
         filename = glob_results[filename_index]
-
-        if f"{image_index}" in file_contents['data']:  # note image index starts from 1 for first image, also header
-            if read_mode:
-                read_points(filename, file_contents, image_index)
-                
+        
+        print(os.path.basename(filename))
+        
+        # note image index starts from 1 for first image, also header
+        if read_mode:
+            read_points(filename, file_contents, image_index)
         else:
             is_current_image_saved = False
 
@@ -412,9 +411,8 @@ if __name__ == "__main__":
                     print("Saved and wrote to output file")
 
                 elif key == ord("c"):
-                    if f"{image_index}" in file_contents["data"]:  # note image index starts from 1 for first image, also header
-                        read_points(filename, original_file_contents, image_index)
-                        is_current_image_saved = False
+                    read_points(filename, original_file_contents, image_index)
+                    is_current_image_saved = False
 
                 elif key == 27:  # ESC key
                     file_contents["current_index"] = image_index
