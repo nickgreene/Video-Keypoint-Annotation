@@ -7,21 +7,32 @@ import json
 import copy
 
 # you can configure these variables. Note: there must be at least as many COLORS as MAX_POINTS
-MAX_POINTS = 8
+MAX_POINTS = 21
 POINT_SIZE = 3
 STARTING_RESIZE_FACTOR = 5
 STARTING_ROI = [(100, 100),(400,400)]
-COLORS = [(0, 0, 255),
-          (52, 152, 235),
-          (52, 201, 235),
-          (0, 255, 0),
-          (255, 227, 87),
-          (255, 0, 0),
-          (255, 0, 127),
-          (205, 102, 155),
-          (235, 152, 225),
-          (204, 153, 255),
-          (0, 51, 102),
+COLORS = [(75, 25, 230),
+          (48, 130, 245),
+          (25, 226, 255),
+          (60, 245, 210),
+          (75, 180, 60),
+          (240, 240, 70),
+          (200, 130, 0),
+          (180, 30, 145),
+          (230, 50, 240),
+          (0, 0, 128),
+          (40, 110, 170),
+          (0, 128, 128),
+          (128, 128, 0),
+          (128, 0, 0),
+          (212, 190, 250),
+          (180, 215, 255),
+          (200, 250, 255),
+          (195, 255, 170),
+          (255, 190, 220),
+          (0, 0, 0),
+          (120, 120, 120),
+          (220, 220, 220)
         ]
 
 UI_SIZE = (200,400) # height, width
@@ -31,6 +42,7 @@ resize_factor = STARTING_RESIZE_FACTOR
 cropPt = [None, None]
 roiPt = STARTING_ROI
 refPt = []
+# linePt = []
 resized_resolution = []
 current_point = 0
 is_point_selected = True
@@ -42,14 +54,17 @@ brightness = 0
 is_current_image_saved = False
 num_quit_attempts = 0
 ui_message_length = 20
-ui_frames = 0
+ui_saved_message_frames = 0
 
+previous_point = 0
+highlight_selected_point_frames = 0
+highlight_point_length = 10
 
 output_file_name = "output.json"
 backup_file_name = "backup.json"
 
 def render_image():
-    global image, refPt, isRMouseDown
+    global image, refPt, isRMouseDown, highlight_selected_point_frames
     clone = image.copy()
  
     if brightness > 0:
@@ -60,9 +75,22 @@ def render_image():
         clone = np.maximum(clone, -brightness)
         clone -= -brightness    
    
+    if refPt[-2] is not None and refPt[-1] is not None:
+        cv2.line(clone, refPt[-2], refPt[-1], COLORS[len(refPt)], 3)
+   
     for i in range(len(refPt)):
         if refPt[i] is not None:
             cv2.circle(clone, refPt[i], 3, COLORS[i], -1)
+            cv2.circle(clone, refPt[i], 1, (0,0,0), -1)
+            
+    if highlight_selected_point_frames > 0:
+        if refPt[current_point] is not None:
+            color = 0
+            if highlight_selected_point_frames < highlight_point_length // 3:        
+                color = (255*((highlight_point_length//3)-highlight_selected_point_frames))//(highlight_point_length//3)
+            
+            cv2.circle(clone, refPt[current_point], 15, (color, color, 255 - color), 4)
+            highlight_selected_point_frames -= 1
     
     if isRMouseDown:
         cv2.rectangle(clone, cropPt[0], cropPt[1], (0, 255, 0), 1)
@@ -71,7 +99,7 @@ def render_image():
 
 
 def render_roi():
-    global image, roiPt, refPt
+    global image, roiPt, refPt, linePt, highlight_selected_point_frames
     roi = image[roiPt[0][1]:roiPt[1][1], roiPt[0][0]:roiPt[1][0]]
     resized_resolution = (round(roi.shape[1]*resize_factor), round(roi.shape[0]*resize_factor))
     roi = cv2.resize(roi, (resized_resolution[0], resized_resolution[1]))
@@ -84,18 +112,43 @@ def render_roi():
         roi = np.maximum(roi, -brightness)
         roi -= -brightness
     
+    if refPt[-2] is not None and refPt[-1] is not None:
+        x0, y0 = refPt[-2]
+        x1, y1 = refPt[-1]
+        x2, y2 = roiPt[0]
+
+        point_in_roi1 = (round((x0 - x2) * resize_factor), round((y0 - y2) * resize_factor))
+        point_in_roi2 = (round((x1 - x2) * resize_factor), round((y1 - y2) * resize_factor))
+        
+        cv2.line(roi, point_in_roi1, point_in_roi2, COLORS[len(refPt)], 3)
     
     for i in range(len(refPt)):
         if refPt[i] is not None:
             x1, y1 = refPt[i]
             x2, y2 = roiPt[0]
-            cv2.circle(roi, (round((x1 - x2) * resize_factor), round((y1 - y2) * resize_factor)), 3, COLORS[i], -1)
+            
+            point_in_roi = (round((x1 - x2) * resize_factor), round((y1 - y2) * resize_factor))
+            cv2.circle(roi, point_in_roi, 3, COLORS[i], -1)
+            cv2.circle(roi, point_in_roi, 1, (0,0,0), -1)
+            
+    if highlight_selected_point_frames > 0:
+        if refPt[current_point] is not None:
+            color = 0
+            if highlight_selected_point_frames < highlight_point_length // 3:        
+                color = (255*((highlight_point_length//3)-highlight_selected_point_frames))//(highlight_point_length//3)
+            
+            x1, y1 = refPt[current_point]
+            x2, y2 = roiPt[0]
+            point_in_roi = (round((x1 - x2) * resize_factor), round((y1 - y2) * resize_factor))
+
+            cv2.circle(roi, point_in_roi, 15, (color, color, 255 - color), 4)
+            highlight_selected_point_frames -= 1
             
     cv2.imshow("ROI", roi)
     
     
 def render_UI(current_image, total_images):
-    global is_current_image_saved, image_index, glob_results, ui_frames  
+    global is_current_image_saved, image_index, glob_results, ui_saved_message_frames  
     ui = np.zeros((UI_SIZE[0], UI_SIZE[1], 3), np.uint8)
     ui.fill(255)
     
@@ -119,12 +172,12 @@ def render_UI(current_image, total_images):
         
     cv2.putText(ui, current_point_text, ( (UI_SIZE[1]-280)//2, UI_SIZE[0]*3//5), cv2.FONT_HERSHEY_SIMPLEX, 1, COLORS[current_point_for_UI-1], 2, cv2.LINE_AA)
 
-    if ui_frames > 0:
+    if ui_saved_message_frames > 0:
         color = 0
-        if ui_frames < ui_message_length // 3:        
-            color = (255*((ui_message_length//3)-ui_frames))//(ui_message_length//3)
+        if ui_saved_message_frames < ui_message_length // 3:        
+            color = (255*((ui_message_length//3)-ui_saved_message_frames))//(ui_message_length//3)
         cv2.putText(ui, "saved to output file", ( (UI_SIZE[1]-300)//2, UI_SIZE[0]*4//5), cv2.FONT_HERSHEY_SIMPLEX, 1, (color, color, color), 1, cv2.LINE_AA)
-        ui_frames -= 1
+        ui_saved_message_frames -= 1
             
     cv2.imshow("ui", ui)
 
@@ -138,7 +191,7 @@ def handle_mouse_event_roi(event, x, y, flags, param):
 
 
 def click_and_crop(event, x, y, flags, param, window):
-    global refPt, cropPt, roiPt, isMouseDown, isRMouseDown, image, current_point, is_point_selected, is_current_image_saved
+    global refPt, cropPt, roiPt, linePt, isMouseDown, isRMouseDown, image, current_point, is_point_selected, is_current_image_saved
     
     if event == cv2.EVENT_LBUTTONDOWN:
         if current_point > MAX_POINTS - 1:
@@ -320,8 +373,13 @@ if __name__ == "__main__":
         cv2.setMouseCallback("ROI", handle_mouse_event_roi)
         next_image = False
 
+
         # keep looping until the 'ESC' key is pressed
         while not next_image:
+            if current_point != previous_point:
+                previous_point = current_point
+                highlight_selected_point_frames = highlight_point_length
+            
             # display the image and wait for a keypress
             render_image()
             render_roi()
@@ -407,7 +465,7 @@ if __name__ == "__main__":
                     file_contents["brightness"] = brightness
 
                     write_output_file(output_filepath, file_contents)
-                    ui_frames = ui_message_length
+                    ui_saved_message_frames = ui_message_length
                     print("Saved and wrote to output file")
 
                 elif key == ord("c"):
