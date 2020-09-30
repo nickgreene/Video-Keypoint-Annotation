@@ -7,6 +7,7 @@ import json
 import copy
 
 # you can configure these variables. Note: there must be at least as many COLORS as MAX_POINTS
+NUMBER_OF_ROIS = 3
 MAX_POINTS = 21
 POINT_SIZE = 3
 STARTING_RESIZE_FACTOR = 5
@@ -35,14 +36,19 @@ COLORS = [(75, 25, 230),
           (220, 220, 220)
         ]
 
+
 UI_SIZE = (200,400) # height, width
 
 # Below is program code
-resize_factor = STARTING_RESIZE_FACTOR
 cropPt = [None, None]
-roiPt = STARTING_ROI
+
+roiPts = []
+resize_factors = []
+for i in range(NUMBER_OF_ROIS + 1):
+    roiPts.append(STARTING_ROI)
+    resize_factors.append(STARTING_RESIZE_FACTOR)
+    
 refPt = []
-# linePt = []
 resized_resolution = []
 current_point = 0
 is_point_selected = True
@@ -58,7 +64,9 @@ ui_saved_message_frames = 0
 
 previous_point = 0
 highlight_selected_point_frames = 0
-highlight_point_length = 10
+highlight_point_length = 24
+
+roi_selection = 1
 
 output_file_name = "output.json"
 backup_file_name = "backup.json"
@@ -66,6 +74,10 @@ backup_file_name = "backup.json"
 def render_image():
     global image, refPt, isRMouseDown, highlight_selected_point_frames
     clone = image.copy()
+ 
+    resize_factor = resize_factors[0]
+    resized_resolution = (round(clone.shape[1]*resize_factor), round(clone.shape[0]*resize_factor))
+    clone = cv2.resize(clone, (resized_resolution[0], resized_resolution[1]))
  
     if brightness > 0:
         clone = np.minimum(255 - brightness, clone)
@@ -76,12 +88,15 @@ def render_image():
         clone -= -brightness    
    
     if refPt[-2] is not None and refPt[-1] is not None:
-        cv2.line(clone, refPt[-2], refPt[-1], COLORS[len(refPt)], 3)
+        pt1 = (round(refPt[-2][0]*resize_factor), round(refPt[-2][1]*resize_factor))
+        pt2 = (round(refPt[-1][0]*resize_factor), round(refPt[-1][1]*resize_factor))
+        cv2.line(clone, pt1, pt2, COLORS[len(refPt)], 3)
    
     for i in range(len(refPt)):
         if refPt[i] is not None:
-            cv2.circle(clone, refPt[i], 3, COLORS[i], -1)
-            cv2.circle(clone, refPt[i], 1, (0,0,0), -1)
+            pt = (round(refPt[i][0]*resize_factor), round(refPt[i][1]*resize_factor))
+            cv2.circle(clone, pt, 3, COLORS[i], -1)
+            cv2.circle(clone, pt, 1, (0,0,0), -1)
             
     if highlight_selected_point_frames > 0:
         if refPt[current_point] is not None:
@@ -89,77 +104,85 @@ def render_image():
             if highlight_selected_point_frames < highlight_point_length // 3:        
                 color = (255*((highlight_point_length//3)-highlight_selected_point_frames))//(highlight_point_length//3)
             
-            cv2.circle(clone, refPt[current_point], 15, (color, color, 255 - color), 4)
+            pt = (round(refPt[current_point][0]*resize_factor), round(refPt[current_point][1]*resize_factor))
+            cv2.circle(clone, pt, 15, (color, color, 255 - color), 4)
             highlight_selected_point_frames -= 1
     
     if isRMouseDown:
-        cv2.rectangle(clone, cropPt[0], cropPt[1], (0, 255, 0), 1)
+        pt1 = cropPt[0]
+        pt2 = cropPt[1]
+             
+        cv2.rectangle(clone, pt1, pt2, (0, 255, 0), 1)
         
     cv2.imshow("image", clone)
 
 
 def render_roi():
-    global image, roiPt, refPt, linePt, highlight_selected_point_frames
-    roi = image[roiPt[0][1]:roiPt[1][1], roiPt[0][0]:roiPt[1][0]]
-    resized_resolution = (round(roi.shape[1]*resize_factor), round(roi.shape[0]*resize_factor))
-    roi = cv2.resize(roi, (resized_resolution[0], resized_resolution[1]))
+    global image, roiPt, refPt, highlight_selected_point_frames
     
-    if brightness > 0:
-        roi = np.minimum(255 - brightness, roi)
-        roi += brightness
-    
-    if brightness < 0:
-        roi = np.maximum(roi, -brightness)
-        roi -= -brightness
-    
-    if refPt[-2] is not None and refPt[-1] is not None:
-        x0, y0 = refPt[-2]
-        x1, y1 = refPt[-1]
-        x2, y2 = roiPt[0]
-
-        point_in_roi1 = (round((x0 - x2) * resize_factor), round((y0 - y2) * resize_factor))
-        point_in_roi2 = (round((x1 - x2) * resize_factor), round((y1 - y2) * resize_factor))
+    for idx in range(1, len(roiPts)):
+        roiPt = roiPts[idx]
+        resize_factor = resize_factors[idx]
+        roi = image[roiPt[0][1]:roiPt[1][1], roiPt[0][0]:roiPt[1][0]]
+        resized_resolution = (round(roi.shape[1]*resize_factor), round(roi.shape[0]*resize_factor))
+        roi = cv2.resize(roi, (resized_resolution[0], resized_resolution[1]))
         
-        cv2.line(roi, point_in_roi1, point_in_roi2, COLORS[len(refPt)], 3)
-    
-    for i in range(len(refPt)):
-        if refPt[i] is not None:
-            x1, y1 = refPt[i]
+        if brightness > 0:
+            roi = np.minimum(255 - brightness, roi)
+            roi += brightness
+        
+        if brightness < 0:
+            roi = np.maximum(roi, -brightness)
+            roi -= -brightness
+        
+        if refPt[-2] is not None and refPt[-1] is not None:
+            x0, y0 = refPt[-2]
+            x1, y1 = refPt[-1]
             x2, y2 = roiPt[0]
-            
-            point_in_roi = (round((x1 - x2) * resize_factor), round((y1 - y2) * resize_factor))
-            cv2.circle(roi, point_in_roi, 3, COLORS[i], -1)
-            cv2.circle(roi, point_in_roi, 1, (0,0,0), -1)
-            
-    if highlight_selected_point_frames > 0:
-        if refPt[current_point] is not None:
-            color = 0
-            if highlight_selected_point_frames < highlight_point_length // 3:        
-                color = (255*((highlight_point_length//3)-highlight_selected_point_frames))//(highlight_point_length//3)
-            
-            x1, y1 = refPt[current_point]
-            x2, y2 = roiPt[0]
-            point_in_roi = (round((x1 - x2) * resize_factor), round((y1 - y2) * resize_factor))
 
-            cv2.circle(roi, point_in_roi, 15, (color, color, 255 - color), 4)
-            highlight_selected_point_frames -= 1
+            point_in_roi1 = (round((x0 - x2) * resize_factor), round((y0 - y2) * resize_factor))
+            point_in_roi2 = (round((x1 - x2) * resize_factor), round((y1 - y2) * resize_factor))
             
-    cv2.imshow("ROI", roi)
-    
+            cv2.line(roi, point_in_roi1, point_in_roi2, COLORS[len(refPt)], 3)
+        
+        for i in range(len(refPt)):
+            if refPt[i] is not None:
+                x1, y1 = refPt[i]
+                x2, y2 = roiPt[0]
+                
+                point_in_roi = (round((x1 - x2) * resize_factor), round((y1 - y2) * resize_factor))
+                cv2.circle(roi, point_in_roi, 3, COLORS[i], -1)
+                cv2.circle(roi, point_in_roi, 1, (0,0,0), -1)
+                
+        if highlight_selected_point_frames > 0:
+            if refPt[current_point] is not None:
+                color = 0
+                if highlight_selected_point_frames < highlight_point_length // 3:        
+                    color = (255*((highlight_point_length//3)-highlight_selected_point_frames))//(highlight_point_length//3)
+                
+                x1, y1 = refPt[current_point]
+                x2, y2 = roiPt[0]
+                point_in_roi = (round((x1 - x2) * resize_factor), round((y1 - y2) * resize_factor))
+
+                cv2.circle(roi, point_in_roi, 15, (color, color, 255 - color), 4)
+                highlight_selected_point_frames -= 1
+                
+        cv2.imshow(f"ROI_{idx}", roi)
+        
     
 def render_UI(current_image, total_images):
     global is_current_image_saved, image_index, glob_results, ui_saved_message_frames  
     ui = np.zeros((UI_SIZE[0], UI_SIZE[1], 3), np.uint8)
     ui.fill(255)
     
-    cv2.putText(ui, f"image {image_index}/{len(glob_results)}", ( (UI_SIZE[1]-250)//2, UI_SIZE[0]//5), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,0), 1)
+    cv2.putText(ui, f"image {image_index}/{len(glob_results)}", ( (UI_SIZE[1]-250)//2, UI_SIZE[0]//6), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,0), 1)
     
     if is_current_image_saved:
         saved_text = "frame saved"
     else:
         saved_text = "frame not saved"
         
-    cv2.putText(ui, saved_text, ( (UI_SIZE[1]-250)//2, UI_SIZE[0]*2//5), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,0), 1)
+    cv2.putText(ui, saved_text, ( (UI_SIZE[1]-250)//2, UI_SIZE[0]*2//6), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,0), 1)
     
     current_point_for_UI = current_point + 1 - int(not is_point_selected) 
     if current_point >= MAX_POINTS:
@@ -170,29 +193,38 @@ def render_UI(current_image, total_images):
     else:
         current_point_text = f"current point: {current_point_for_UI}+"
         
-    cv2.putText(ui, current_point_text, ( (UI_SIZE[1]-280)//2, UI_SIZE[0]*3//5), cv2.FONT_HERSHEY_SIMPLEX, 1, COLORS[current_point_for_UI-1], 2, cv2.LINE_AA)
+    cv2.putText(ui, current_point_text, ( (UI_SIZE[1]-280)//2, UI_SIZE[0]*3//6), cv2.FONT_HERSHEY_SIMPLEX, 1, COLORS[current_point_for_UI-1], 2, cv2.LINE_AA)
+
+
+    window_selected_text = "current Window: "
+    if roi_selection == 0:
+        window_selected_text += "image"
+    else:
+        window_selected_text += f"ROI_{roi_selection}"
+    cv2.putText(ui, window_selected_text, ( (UI_SIZE[1]-360)//2, UI_SIZE[0]*4//6), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,0), 1)
+
 
     if ui_saved_message_frames > 0:
         color = 0
         if ui_saved_message_frames < ui_message_length // 3:        
             color = (255*((ui_message_length//3)-ui_saved_message_frames))//(ui_message_length//3)
-        cv2.putText(ui, "saved to output file", ( (UI_SIZE[1]-300)//2, UI_SIZE[0]*4//5), cv2.FONT_HERSHEY_SIMPLEX, 1, (color, color, color), 1, cv2.LINE_AA)
+        cv2.putText(ui, "saved to output file", ( (UI_SIZE[1]-300)//2, UI_SIZE[0]*5//6), cv2.FONT_HERSHEY_SIMPLEX, 1, (color, color, color), 1, cv2.LINE_AA)
         ui_saved_message_frames -= 1
             
     cv2.imshow("ui", ui)
 
     
 def handle_mouse_event_image(event, x, y, flags, param):
-    click_and_crop(event, x, y, flags, param, "image")
+    click_and_crop(event, x, y, flags, "image")
 
     
 def handle_mouse_event_roi(event, x, y, flags, param):
-    click_and_crop(event, x, y, flags, param, "ROI")
+    click_and_crop(event, x, y, flags, param)
 
 
-def click_and_crop(event, x, y, flags, param, window):
-    global refPt, cropPt, roiPt, linePt, isMouseDown, isRMouseDown, image, current_point, is_point_selected, is_current_image_saved
-    
+def click_and_crop(event, x, y, flags, window):
+    global refPt, cropPt, roiPts, linePt, isMouseDown, isRMouseDown, image, current_point, is_point_selected, is_current_image_saved
+      
     if event == cv2.EVENT_LBUTTONDOWN:
         if current_point > MAX_POINTS - 1:
             current_point = MAX_POINTS - 1
@@ -200,10 +232,13 @@ def click_and_crop(event, x, y, flags, param, window):
         isMouseDown = True
         
         if window == "image":
-            refPt[current_point] = (x,y)
+            refPt[current_point] = (round(x / resize_factors[0]), round(y / resize_factors[0]))
         
-        if window == "ROI":
-            x2, y2 = roiPt[0]
+        if window[0:3] == "ROI":
+            window_number = int(window[4:])
+            resize_factor = resize_factors[window_number]
+            
+            x2, y2 = roiPts[window_number][0]
             refPt[current_point] = (round(x / resize_factor) + x2, round(y / resize_factor) + y2)
         
         is_current_image_saved = False
@@ -213,10 +248,13 @@ def click_and_crop(event, x, y, flags, param, window):
         is_point_selected = False
            
         if window == "image":
-            refPt[current_point] = (x,y)
+            refPt[current_point] = (round(x / resize_factors[0]), round(y / resize_factors[0]))
         
-        if window == "ROI":
-            x2, y2 = roiPt[0]
+        if window[0:3] == "ROI":
+            window_number = int(window[4:])
+            resize_factor = resize_factors[window_number]
+            
+            x2, y2 = roiPts[window_number][0]
             refPt[current_point] = (round(x / resize_factor) + x2, round(y / resize_factor) + y2)
             
         current_point += 1
@@ -227,20 +265,23 @@ def click_and_crop(event, x, y, flags, param, window):
     elif event == cv2.EVENT_MOUSEMOVE:
         if isMouseDown:           
             if window == "image":
-                refPt[current_point] = (x,y)
+                refPt[current_point] = (round(x / resize_factors[0]), round(y / resize_factors[0]))
         
-            if window == "ROI":
-                x2, y2 = roiPt[0]
+            if window[0:3] == "ROI":
+                window_number = int(window[4:])
+                resize_factor = resize_factors[window_number]
+                
+                x2, y2 = roiPts[window_number][0]
                 refPt[current_point] = (round(x / resize_factor) + x2, round(y / resize_factor) + y2)
         
         elif isRMouseDown:
             if window == "image":
-                cropPt[1] = (x, y)                       
+                cropPt[1] = (x,y)
             
     elif event == cv2.EVENT_RBUTTONDOWN:
         if window == "image":
             isRMouseDown = True
-            cropPt = [(x, y), (x, y)]
+            cropPt = [(x,y), (x,y)]
 
     elif event == cv2.EVENT_RBUTTONUP:
         if window == "image":
@@ -266,7 +307,15 @@ def click_and_crop(event, x, y, flags, param, window):
             if y1 < 0:
                 y1 = 0
                 
-            roiPt = [(x1, y1), (x2, y2)]
+                        
+            x1 = round(x1 / resize_factors[0])
+            x2 = round(x2 / resize_factors[0])
+            y1 = round(y1 / resize_factors[0])
+            y2 = round(y2 / resize_factors[0])
+ 
+             
+            if x1 != x2 and y1 != y2:
+                roiPts[roi_selection] = [(x1, y1), (x2, y2)]
 
 
 def add_output_line(filename, file_contents, image_index, backup_file_object):
@@ -336,7 +385,11 @@ if __name__ == "__main__":
         
         filename_index = min(max(file_contents["current_index"] - 1, 0), len(glob_results) - 1)
         roiPt = file_contents["roi"]
-        resize_factor = file_contents["scale"]
+        
+        file_resize_factors = file_contents["scale"]
+        for i in range(len(file_resize_factors)):
+            resize_factors[i] = file_resize_factors[i] 
+        
         brightness = file_contents["brightness"]
 
     else:
@@ -369,10 +422,12 @@ if __name__ == "__main__":
         image = cv2.imread(filename)
         cv2.namedWindow("image")
         cv2.setMouseCallback("image", handle_mouse_event_image)
-        cv2.namedWindow("ROI")
-        cv2.setMouseCallback("ROI", handle_mouse_event_roi)
-        next_image = False
+        
+        for i in range(1, NUMBER_OF_ROIS+1):
+            cv2.namedWindow(f"ROI_{i}")
+            cv2.setMouseCallback(f"ROI_{i}", handle_mouse_event_roi, f"ROI_{i}")
 
+        next_image = False
 
         # keep looping until the 'ESC' key is pressed
         while not next_image:
@@ -461,7 +516,7 @@ if __name__ == "__main__":
                     
                     file_contents["current_index"] = image_index
                     file_contents["roi"] = roiPt
-                    file_contents["scale"] = resize_factor
+                    file_contents["scale"] = resize_factors
                     file_contents["brightness"] = brightness
 
                     write_output_file(output_filepath, file_contents)
@@ -475,7 +530,7 @@ if __name__ == "__main__":
                 elif key == 27:  # ESC key
                     file_contents["current_index"] = image_index
                     file_contents["roi"] = roiPt
-                    file_contents["scale"] = resize_factor
+                    file_contents["scale"] = resize_factors
                     file_contents["brightness"] = brightness
 
                     write_output_file(output_filepath, file_contents)
@@ -508,77 +563,26 @@ if __name__ == "__main__":
                     is_current_image_saved = False
                 
                 elif key == ord("="):
-                    resize_factor += 0.2
+                    resize_factors[roi_selection] += 0.1
                     
                 elif key == ord("-"):
-                    resize_factor -= 0.2
+                    resize_factors[roi_selection] -= 0.1
                     
-                    if resize_factor < 0.6:
-                        resize_factor = 0.4
+                    if resize_factors[roi_selection] < 0.2:
+                        resize_factors[roi_selection] = 0.1
 
                 elif key == ord("1"):
-                    current_point = 0
-                    if current_point > MAX_POINTS - 1:
-                        current_point = MAX_POINTS - 1
-    
-                    is_point_selected = True
+                    roi_selection = 0
                     
                 elif key == ord("2"):
-                    current_point = 1
-                    if current_point > MAX_POINTS - 1:
-                        current_point = MAX_POINTS - 1
-
-                    is_point_selected = True
-    
+                    roi_selection = 1
+                
                 elif key == ord("3"):
-                    current_point = 2
-                    if current_point > MAX_POINTS - 1:
-                        current_point = MAX_POINTS - 1
-
-                    is_point_selected = True
+                    roi_selection = 2
     
                 elif key == ord("4"):
-                    current_point = 3
-                    if current_point > MAX_POINTS - 1:
-                        current_point = MAX_POINTS - 1
-
-                    is_point_selected = True
-    
-                elif key == ord("5"):
-                    current_point = 4
-                    if current_point > MAX_POINTS - 1:
-                        current_point = MAX_POINTS - 1
-
-                    is_point_selected = True
-    
-                elif key == ord("6"):
-                    current_point = 5
-                    if current_point > MAX_POINTS - 1:
-                        current_point = MAX_POINTS - 1
-
-                    is_point_selected = True
-    
-                elif key == ord("7"):
-                    current_point = 6
-                    if current_point > MAX_POINTS - 1:
-                        current_point = MAX_POINTS - 1
-
-                    is_point_selected = True
-    
-                elif key == ord("8"):
-                    current_point = 7
-                    if current_point > MAX_POINTS - 1:
-                        current_point = MAX_POINTS - 1
-
-                    is_point_selected = True
-    
-                elif key == ord("9"):
-                    current_point = 8
-                    if current_point > MAX_POINTS - 1:
-                        current_point = MAX_POINTS - 1
-
-                    is_point_selected = True
-                    
+                    roi_selection = 3
+                                    
                 elif key == ord("w") or key == ord("i"):
                     index = current_point
                     if not is_point_selected:

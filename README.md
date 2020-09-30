@@ -17,14 +17,14 @@ additional non-required option is ```--starting_frame ``` which forces the progr
 
 ### Keyboard Shortcuts
 - ```wasd``` | ```ijkl```: move the selected point by one pixel
-- ```1-9```: select a keypoint to edit
+- ```1-9```: select a roi window
 - ```z/x``` | ```,/.```: increment/decrement the keypoint selection
 - ```Spacebar``` | ```b```: save the current image and move to the next/previous image. Load saved keypoints for the new image if they already exist.
 - ```[``` | ```]```: save the current image and move to the next/previous image. Carry over the keypoints from the previous image.
 - ```f``` | ```g```: don't save the current image and move to the next/previous image. Load saved keypoints for the new image if they already exist.
 - ```r```: delete the selected keypoint
 - ```t```: delete all of the keypoints in the current image
-- ```=``` | ```-```: enlarge/shrink the ROI window
+- ```=``` | ```-```: enlarge/shrink the current ROI window
 - ```y``` | ```h```: increase/decrease image brightness
 - ```n```: reset image brightness
 - ```v```: force save the keypoints in the current image and write the output file
