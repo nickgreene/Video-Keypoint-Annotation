@@ -82,6 +82,8 @@ highlight_point_length = 24
 
 roi_selection = 1
 
+undo_roi_pts = None
+
 output_file_name = "output.json"
 backup_file_name = "backup.json"
 
@@ -276,6 +278,45 @@ def click_and_crop(event, x, y, flags, window):
         if current_point > MAX_POINTS - 1:
             current_point = MAX_POINTS - 1
             is_point_selected = True
+
+
+    elif event == cv2.EVENT_RBUTTONDOWN:
+        print(window, x, y)
+        
+        if window == IMAGE_WINDOW_NAME:
+            x_pos = round(x / resize_factors[0])
+            y_pos = round(y / resize_factors[0])
+        
+        if window[0:3] == "ROI":
+            window_number = int(window[4:])
+            resize_factor = resize_factors[window_number]
+            
+            x2, y2 = roiPts[window_number][0]
+            
+            x_pos = round(x / resize_factor) + x2
+            y_pos = round(y / resize_factor) + y2
+
+        print(x_pos, y_pos)
+
+        min_dist = float('inf')
+
+        if refPt is not None:
+            for i, pt in enumerate(refPt):
+                if pt is None:
+                    continue
+
+                x_pt, y_pt = pt
+                dist = (x_pos - x_pt)**2 + (y_pos - y_pt)**2
+
+                if dist < min_dist:
+                    current_point = i
+                    min_dist = dist
+            
+                print(current_point, min_dist, dist)
+
+            is_point_selected = True
+
+
             
     elif event == cv2.EVENT_MOUSEMOVE:
         if isMouseDown:           
@@ -293,12 +334,12 @@ def click_and_crop(event, x, y, flags, window):
             if window == IMAGE_WINDOW_NAME:
                 cropPt[1] = (x,y)
             
-    elif event == cv2.EVENT_RBUTTONDOWN:
+    elif event == cv2.EVENT_MBUTTONDOWN:
         if window == IMAGE_WINDOW_NAME:
             isRMouseDown = True
             cropPt = [(x,y), (x,y)]
 
-    elif event == cv2.EVENT_RBUTTONUP:
+    elif event == cv2.EVENT_MBUTTONUP:
         if window == IMAGE_WINDOW_NAME:
             isRMouseDown = False                    
             
@@ -469,7 +510,7 @@ if __name__ == "__main__":
             key = cv2.waitKey(1) & 0xFF
 
             if not isMouseDown:
-                if key == ord("q"):
+                if key == ord("l"):
                     num_quit_attempts += 1 # press q 10 times to quit without saving
                     print(f"quitting after {10 - num_quit_attempts} more q presses")
                     if num_quit_attempts > 9:
@@ -510,7 +551,7 @@ if __name__ == "__main__":
                         read_mode = False
                         is_current_image_saved = False
                 
-                elif key == ord("f"):
+                elif key == ord(","):
                     next_image = True
 
                     filename_index -= 1
@@ -524,7 +565,7 @@ if __name__ == "__main__":
                         refPt[i] = None
                     
                 
-                elif key == ord("g"):
+                elif key == ord("."):
                     next_image = True
         
                     filename_index += 1
@@ -550,11 +591,17 @@ if __name__ == "__main__":
                     ui_saved_message_frames = ui_message_length
                     print("Saved and wrote to output file")
 
-                elif key == ord("c"):
+                elif key == ord("u"):
                     read_points(filename, original_file_contents, image_index)
                     is_current_image_saved = False
 
+                elif key == ord("y"):
+                    read_points(filename, file_contents, image_index)
+                    is_current_image_saved = False
+
                 elif key == 27:  # ESC key
+                    add_output_line(filename, file_contents, image_index, backup_file_object)
+
                     file_contents["current_index"] = image_index
                     file_contents["roi"] = roiPt
                     file_contents["scale"] = resize_factors
@@ -581,13 +628,13 @@ if __name__ == "__main__":
                             current_point = 0
                             is_point_selected = True
                             
-                elif key == ord("t"):
-                    for i in range(0, len(refPt)):
-                        refPt[i] = None
+                # elif key == ord("t"):
+                #     for i in range(0, len(refPt)):
+                #         refPt[i] = None
                 
-                    current_point = 0
-                    is_point_selected = True
-                    is_current_image_saved = False
+                #     current_point = 0
+                #     is_point_selected = True
+                #     is_current_image_saved = False
                 
                 elif key == ord("="):
                     resize_factors[roi_selection] += 0.1
@@ -610,7 +657,7 @@ if __name__ == "__main__":
                 elif key == ord("4"):
                     roi_selection = 3
                                     
-                elif key == ord("w") or key == ord("i"):
+                elif key == ord("w"):
                     index = current_point
                     if not is_point_selected:
                         index = current_point - 1
@@ -623,7 +670,7 @@ if __name__ == "__main__":
                         
                     is_current_image_saved = False
                         
-                elif key == ord("a") or key == ord("j"):
+                elif key == ord("a"):
                     index = current_point
                     if not is_point_selected:
                         index = current_point - 1
@@ -636,7 +683,7 @@ if __name__ == "__main__":
     
                     is_current_image_saved = False
 
-                elif key == ord("s") or key == ord("k"):
+                elif key == ord("s"):
                     index = current_point
                     if not is_point_selected:
                         index = current_point - 1
@@ -649,7 +696,7 @@ if __name__ == "__main__":
 
                     is_current_image_saved = False
                         
-                elif key == ord("d") or key == ord("l"):
+                elif key == ord("d"):
                     index = current_point
                     if not is_point_selected:
                         index = current_point - 1
@@ -662,7 +709,7 @@ if __name__ == "__main__":
 
                     is_current_image_saved = False
     
-                elif key == ord("z") or key == ord(","):
+                elif key == ord("q"):
                     if is_point_selected:
                         current_point -= 1
                     else:
@@ -673,7 +720,7 @@ if __name__ == "__main__":
                                         
                     is_point_selected = True
                                         
-                elif key == ord("x") or key == ord("."):
+                elif key == ord("e"):
                     if is_point_selected:
                         current_point += 1
                     
@@ -682,11 +729,11 @@ if __name__ == "__main__":
                         
                     is_point_selected = True
                     
-                elif key == ord("y"):
+                elif key == ord("x"):
                     brightness += 5
                     
-                elif key == ord("h"):
+                elif key == ord("z"):
                     brightness -= 5                
                 
-                elif key == ord("n"):
+                elif key == ord("c"):
                     brightness = 0
