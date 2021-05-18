@@ -8,7 +8,9 @@ import copy
 
 # you can configure these variables. Note: there must be at least as many COLORS as MAX_POINTS
 NUMBER_OF_ROIS = 3
-MAX_POINTS = 21
+MAX_POINTS = 27
+SHAFT_POINT_1 = 19
+SHAFT_POINT_2 = 20
 POINT_SIZE = 3
 STARTING_RESIZE_FACTOR = 5
 STARTING_ROI = [(100, 100),(400,400)]
@@ -31,13 +33,25 @@ COLORS = [(75, 25, 230),
           (200, 250, 255),
           (195, 255, 170),
           (255, 190, 220),
-          (0, 0, 0),
           (120, 120, 120),
-          (220, 220, 220)
+          (220, 220, 220),
+          (0, 137, 250),
+          (0, 230, 162),
+          (190, 250, 0),
+          (230, 2, 35),
+          (17, 3, 255),
+          (227, 11, 222),
+          (11, 160, 227)
         ]
 
+################################################
+UI_WINDOW_NAME = "ui"
+IMAGE_WINDOW_NAME = "image"
+ROI_WINDOW_NAME = "ROI"
 
 UI_SIZE = (200,400) # height, width
+
+default_selected_point = 0
 
 # Below is program code
 cropPt = [None, None]
@@ -87,10 +101,10 @@ def render_image():
         clone = np.maximum(clone, -brightness)
         clone -= -brightness    
    
-    if refPt[-2] is not None and refPt[-1] is not None:
-        pt1 = (round(refPt[-2][0]*resize_factor), round(refPt[-2][1]*resize_factor))
-        pt2 = (round(refPt[-1][0]*resize_factor), round(refPt[-1][1]*resize_factor))
-        cv2.line(clone, pt1, pt2, COLORS[len(refPt)], 3)
+    if refPt[SHAFT_POINT_1] is not None and refPt[SHAFT_POINT_2] is not None:
+        pt1 = (round(refPt[SHAFT_POINT_1][0]*resize_factor), round(refPt[SHAFT_POINT_1][1]*resize_factor))
+        pt2 = (round(refPt[SHAFT_POINT_2][0]*resize_factor), round(refPt[SHAFT_POINT_2][1]*resize_factor))
+        cv2.line(clone, pt1, pt2, COLORS[SHAFT_POINT_2], 3)
    
     for i in range(len(refPt)):
         if refPt[i] is not None:
@@ -114,7 +128,7 @@ def render_image():
              
         cv2.rectangle(clone, pt1, pt2, (0, 255, 0), 1)
         
-    cv2.imshow("image", clone)
+    cv2.imshow(IMAGE_WINDOW_NAME, clone)
 
 
 def render_roi():
@@ -125,6 +139,7 @@ def render_roi():
         resize_factor = resize_factors[idx]
         roi = image[roiPt[0][1]:roiPt[1][1], roiPt[0][0]:roiPt[1][0]]
         resized_resolution = (round(roi.shape[1]*resize_factor), round(roi.shape[0]*resize_factor))
+ 
         roi = cv2.resize(roi, (resized_resolution[0], resized_resolution[1]))
         
         if brightness > 0:
@@ -135,15 +150,15 @@ def render_roi():
             roi = np.maximum(roi, -brightness)
             roi -= -brightness
         
-        if refPt[-2] is not None and refPt[-1] is not None:
-            x0, y0 = refPt[-2]
-            x1, y1 = refPt[-1]
+        if refPt[SHAFT_POINT_1] is not None and refPt[SHAFT_POINT_2] is not None:
+            x0, y0 = refPt[SHAFT_POINT_1]
+            x1, y1 = refPt[SHAFT_POINT_2]
             x2, y2 = roiPt[0]
 
             point_in_roi1 = (round((x0 - x2) * resize_factor), round((y0 - y2) * resize_factor))
             point_in_roi2 = (round((x1 - x2) * resize_factor), round((y1 - y2) * resize_factor))
             
-            cv2.line(roi, point_in_roi1, point_in_roi2, COLORS[len(refPt)], 3)
+            cv2.line(roi, point_in_roi1, point_in_roi2, COLORS[SHAFT_POINT_2], 3)
         
         for i in range(len(refPt)):
             if refPt[i] is not None:
@@ -167,7 +182,7 @@ def render_roi():
                 cv2.circle(roi, point_in_roi, 15, (color, color, 255 - color), 4)
                 highlight_selected_point_frames -= 1
                 
-        cv2.imshow(f"ROI_{idx}", roi)
+        cv2.imshow(f"{ROI_WINDOW_NAME}_{idx}", roi)
         
     
 def render_UI(current_image, total_images):
@@ -198,9 +213,9 @@ def render_UI(current_image, total_images):
 
     window_selected_text = "current Window: "
     if roi_selection == 0:
-        window_selected_text += "image"
+        window_selected_text += IMAGE_WINDOW_NAME
     else:
-        window_selected_text += f"ROI_{roi_selection}"
+        window_selected_text += f"{ROI_WINDOW_NAME}_{roi_selection}"
     cv2.putText(ui, window_selected_text, ( (UI_SIZE[1]-360)//2, UI_SIZE[0]*4//6), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,0), 1)
 
 
@@ -211,11 +226,11 @@ def render_UI(current_image, total_images):
         cv2.putText(ui, "saved to output file", ( (UI_SIZE[1]-300)//2, UI_SIZE[0]*5//6), cv2.FONT_HERSHEY_SIMPLEX, 1, (color, color, color), 1, cv2.LINE_AA)
         ui_saved_message_frames -= 1
             
-    cv2.imshow("ui", ui)
+    cv2.imshow(UI_WINDOW_NAME, ui)
 
     
 def handle_mouse_event_image(event, x, y, flags, param):
-    click_and_crop(event, x, y, flags, "image")
+    click_and_crop(event, x, y, flags, IMAGE_WINDOW_NAME)
 
     
 def handle_mouse_event_roi(event, x, y, flags, param):
@@ -231,7 +246,7 @@ def click_and_crop(event, x, y, flags, window):
             
         isMouseDown = True
         
-        if window == "image":
+        if window == IMAGE_WINDOW_NAME:
             refPt[current_point] = (round(x / resize_factors[0]), round(y / resize_factors[0]))
         
         if window[0:3] == "ROI":
@@ -247,7 +262,7 @@ def click_and_crop(event, x, y, flags, window):
         isMouseDown = False
         is_point_selected = False
            
-        if window == "image":
+        if window == IMAGE_WINDOW_NAME:
             refPt[current_point] = (round(x / resize_factors[0]), round(y / resize_factors[0]))
         
         if window[0:3] == "ROI":
@@ -264,7 +279,7 @@ def click_and_crop(event, x, y, flags, window):
             
     elif event == cv2.EVENT_MOUSEMOVE:
         if isMouseDown:           
-            if window == "image":
+            if window == IMAGE_WINDOW_NAME:
                 refPt[current_point] = (round(x / resize_factors[0]), round(y / resize_factors[0]))
         
             if window[0:3] == "ROI":
@@ -275,16 +290,16 @@ def click_and_crop(event, x, y, flags, window):
                 refPt[current_point] = (round(x / resize_factor) + x2, round(y / resize_factor) + y2)
         
         elif isRMouseDown:
-            if window == "image":
+            if window == IMAGE_WINDOW_NAME:
                 cropPt[1] = (x,y)
             
     elif event == cv2.EVENT_RBUTTONDOWN:
-        if window == "image":
+        if window == IMAGE_WINDOW_NAME:
             isRMouseDown = True
             cropPt = [(x,y), (x,y)]
 
     elif event == cv2.EVENT_RBUTTONUP:
-        if window == "image":
+        if window == IMAGE_WINDOW_NAME:
             isRMouseDown = False                    
             
             x1 = cropPt[0][0]
@@ -362,9 +377,16 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("-i", "--image_folder", required=True, help="Path to the image folder")
     ap.add_argument("-e", "--image_extension", required=True, help=".ppm, .pgm, .png")
-    ap.add_argument("-f", "--starting_frame", required=False)
+    ap.add_argument("-f", "--starting_frame", required=False, help="start on frame index (ignores save data for last frame)")
+    ap.add_argument("-p", "--default_selected_point", required=False, type=int, help="Set the default starting point when ch")
+
     
     args = vars(ap.parse_args())
+
+    if args["default_selected_point"] is not None:
+        default_selected_point = args["default_selected_point"] - 1
+    
+    current_point = default_selected_point
     
     glob_results = glob.glob(os.path.join( args["image_folder"], f'*{args["image_extension"]}'))
     
@@ -391,7 +413,7 @@ if __name__ == "__main__":
             resize_factors[i] = file_resize_factors[i] 
         
         brightness = file_contents["brightness"]
-
+ 
     else:
         file_contents = { "data":{} }
         
@@ -420,12 +442,16 @@ if __name__ == "__main__":
 
         read_mode = True
         image = cv2.imread(filename)
-        cv2.namedWindow("image")
-        cv2.setMouseCallback("image", handle_mouse_event_image)
         
+        cv2.namedWindow(UI_WINDOW_NAME, cv2.WINDOW_GUI_NORMAL  )
+
+        cv2.namedWindow(IMAGE_WINDOW_NAME, cv2.WINDOW_GUI_NORMAL  )
+        cv2.setMouseCallback(IMAGE_WINDOW_NAME, handle_mouse_event_image)
+        
+
         for i in range(1, NUMBER_OF_ROIS+1):
-            cv2.namedWindow(f"ROI_{i}")
-            cv2.setMouseCallback(f"ROI_{i}", handle_mouse_event_roi, f"ROI_{i}")
+            cv2.namedWindow(f"{ROI_WINDOW_NAME}_{i}", cv2.WINDOW_GUI_NORMAL  )
+            cv2.setMouseCallback(f"{ROI_WINDOW_NAME}_{i}", handle_mouse_event_roi, f"{ROI_WINDOW_NAME}_{i}")
 
         next_image = False
 
@@ -462,7 +488,7 @@ if __name__ == "__main__":
                     if filename_index > len(glob_results) - 1:
                         filename_index = len(glob_results) - 1
                         
-                    current_point = 0
+                    current_point = default_selected_point
                     is_point_selected = True
                     
                     if key == ord("]"):
@@ -477,7 +503,7 @@ if __name__ == "__main__":
                     if filename_index < 0:
                         filename_index = 0
                         
-                    current_point = 0
+                    current_point = default_selected_point
                     is_point_selected = True
                     
                     if key == ord("["):
@@ -491,7 +517,7 @@ if __name__ == "__main__":
                     if filename_index < 0:
                         filename_index = 0
                         
-                    current_point = 0
+                    current_point = default_selected_point
                     is_point_selected = True
                     
                     for i in range(0, len(refPt)):
@@ -505,12 +531,13 @@ if __name__ == "__main__":
                     if filename_index > len(glob_results) - 1:
                         filename_index = len(glob_results) - 1
                         
-                    current_point = 0
+                    current_point = default_selected_point
                     is_point_selected = True
                     
                     for i in range(0, len(refPt)):
                         refPt[i] = None
                     
+
                 elif key == ord("v"):
                     add_output_line(filename, file_contents, image_index, backup_file_object)
                     

@@ -7,7 +7,9 @@ Usage:
 python annotate.py --image_folder PATH_TO_FOLDER_OF_IMAGES --image_extension FILE_EXTENSION_OF_IMAGES
 ```
 
-additional non-required option is ```--starting_frame ``` which forces the program to open that frame
+additional options are:
+-  ```--starting_frame```  - forces the program to start on frame index (ignoring the save data for last opened frame)
+-  ```--default_selected_point```  - Set the default selected point to something other than 0 when moving to a new image
 
 
 ### Mouse Actions
