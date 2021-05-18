@@ -34,3 +34,15 @@ additional options are:
 - ```y```: reset the keypoints to how they were when the current frame was loaded
 - ```ESC```: quit and save changes (will save the current frame even if it says "unsaved")
 - ```l```: press and hold to quit without saving any changes at all (quits after 10 uninterrupted 'l' presses)
+
+
+### Intented Workflow
+- Adjust image by first selecting the image window with ```1``` and then adjust the window size with ```+-``` (first run only)
+- Set up ROIS by selecting the roi to edit with ```2-4``` and then dragging with the middle mouse button on the image window
+- Insert keypoints in order by left clicking at the rough position and then nudging with ```wasd```. Once the keypoint is in the right spot you can left click to insert the next keypoint (when the UI window shows "current point: i+" a left click will insert/move the next point instead of moving the current point)
+- Use ```q/e``` to skip keypoints or to go back and fix previous keypoints
+- After the first frame is done, copy over the keypoints from the previous frame with `]`. Then use the mouse ```right click``` to select a point to edit. Move it to the new poisition with ```left click``` or ```wasd```. Repeat for all of the points. If needed, use ```q/e``` and ```left click``` to insert more points, or press ```r``` to delete a point.
+
+
+### Saving
+The output is automatically saved to ```output.json``` upon exiting with ```ESC```. Other information is also saved and recalled upon resuming including the current frame, window sizes, etc... 
